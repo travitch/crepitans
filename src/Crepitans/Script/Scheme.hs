@@ -29,12 +29,15 @@ lispToHaskell lv rep =
     (CA.PathRepr, LST.String fp) -> return (Just (CA.Path fp))
     (CA.BinaryRepr, LST.Opaque dyn)
       | Just bin <- DD.fromDynamic dyn -> return (Just (CA.Binary bin))
+    (CA.DiscoveryRepr, LST.Opaque dyn)
+      | Just di <- DD.fromDynamic dyn -> return (Just (CA.DiscoveryInfo di))
     _ -> return Nothing
 
 haskellToLisp :: CA.Argument tp -> LST.LispVal
 haskellToLisp a =
   case a of
     CA.Binary bin -> LST.Opaque (DD.toDyn bin)
+    CA.DiscoveryInfo di -> LST.Opaque (DD.toDyn di)
     CA.String_ s -> LST.String s
     CA.Path s -> LST.String s
 
@@ -102,21 +105,23 @@ toFunc mapping (F name argumentReprs f) = LST.CustFunc $ \actuals -> do
     Right wrappedActuals -> lift (CA.fromHaskell mapping <$> f wrappedActuals)
     Left err -> CMC.throwM (CE.ArgumentMappingError err)
 
-libraryFunctions :: [FunctionDefinition]
-libraryFunctions =
+libraryFunctions :: LJ.LogAction IO CL.LogMessage -> [FunctionDefinition]
+libraryFunctions logAction =
   [ F "load-binary" (Ctx.Empty Ctx.:> CA.PathRepr) CLS.loadBinary
   , F "format-binary-header" (Ctx.Empty Ctx.:> CA.BinaryRepr) CLS.formatBinaryHeader
+  , F "discover-functions" (Ctx.Empty Ctx.:> CA.BinaryRepr) (CLS.discoverFunctions logAction)
   ]
 
 -- | Introduce all of the value and function bindings into the Scheme
 -- environment to support evaluation
 initializeEnvironment
   :: (MonadIO m, CMC.MonadThrow m)
-  => LST.Env
+  => LJ.LogAction IO CL.LogMessage
+  -> LST.Env
   -> m ()
-initializeEnvironment initialEnv = do
+initializeEnvironment logAction initialEnv = do
   eres <- liftIO $ CME.runExceptT $ do
-    F.forM_ libraryFunctions $ \lf -> do
+    F.forM_ (libraryFunctions logAction) $ \lf -> do
       _ <- LSV.defineVar initialEnv (functionDefinitionName lf) (toFunc schemeMapping lf)
       return ()
   case eres of
@@ -141,7 +146,7 @@ run
 run logAction scriptPath scriptContents = do
   prog <- parseScript scriptContents
   env <- liftIO LSC.r7rsEnv'
-  initializeEnvironment env
+  initializeEnvironment logAction env
   -- Note that this evaluator throws away all of the values returned by each
   -- top-level value (e.g., function application).  This is the intended
   -- semantics; if users want to save those values they need to bind them to

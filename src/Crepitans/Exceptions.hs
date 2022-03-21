@@ -9,6 +9,7 @@ module Crepitans.Exceptions (
   ) where
 
 import qualified Control.Exception as CE
+import qualified Data.ElfEdit as DE
 import qualified Language.Scheme.Types as LST
 import           Numeric.Natural ( Natural )
 import qualified Prettyprinter as PP
@@ -20,6 +21,7 @@ data FatalException where
   LispEvaluationError :: LST.LispError -> FatalException
   ArgumentMappingError :: CA.ArgumentTypeError -> FatalException
   ELFHeaderDecodeError :: Natural -> String -> FatalException
+  UnsupportedELFArchitecture :: DE.ElfClass w -> DE.ElfMachine -> FatalException
 
 deriving instance Show FatalException
 instance CE.Exception FatalException
@@ -31,6 +33,7 @@ ppFatalException x =
     LispEvaluationError lx -> PP.pretty "Lisp evaluation error: " <> PP.viaShow lx
     ArgumentMappingError ate -> PP.pretty ate
     ELFHeaderDecodeError off msg -> PP.pretty "Error decoding ELF header at offset " <> PP.pretty off <> PP.pretty ": " <> PP.pretty msg
+    UnsupportedELFArchitecture klass machine -> PP.pretty "Unsupported ELF architecture: " <> PP.viaShow machine <> PP.pretty " at " <> PP.viaShow (DE.elfClassBitWidth klass) <> PP.pretty " bits"
 
 instance PP.Pretty FatalException where
   pretty = ppFatalException

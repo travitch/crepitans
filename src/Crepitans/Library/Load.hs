@@ -1,19 +1,42 @@
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
 module Crepitans.Library.Load (
-  loadBinary
+    loadBinary
   , formatBinaryHeader
+  , discoverFunctions
   ) where
 
+import           Control.Lens ( (&), (^.), (.~) )
 import qualified Control.Monad.Catch as CMC
 import qualified Data.ByteString as BS
 import qualified Data.ElfEdit as DE
+import qualified Data.Foldable as F
+import qualified Data.Map.Strict as Map
+import           Data.Parameterized.Some ( Some(..) )
+import qualified Lumberjack as LJ
 import qualified Prettyprinter as PP
 import qualified Prettyprinter.Render.String as PRS
 
+import qualified Data.Macaw.Architecture.Info as DMAI
+import qualified Data.Macaw.ARM as DMA
+import           Data.Macaw.ARM.ARMReg ()
 import qualified Data.Macaw.BinaryLoader as DMB
+import           Data.Macaw.BinaryLoader.PPC ()
+import           Data.Macaw.BinaryLoader.AArch32 ()
+import           Data.Macaw.BinaryLoader.X86 ()
+import qualified Data.Macaw.CFG as DMC
+import qualified Data.Macaw.Discovery as DMD
+import qualified Data.Macaw.Memory as DMM
+import qualified Data.Macaw.Memory.LoadCommon as DMML
+import qualified Data.Macaw.PPC as DMP
+import           Data.Macaw.PPC.PPCReg ()
+import qualified Data.Macaw.X86 as DMX
+import qualified Data.Macaw.Utils.IncComp as DMUI
 
+import qualified Crepitans.Architecture as CArch
 import qualified Crepitans.ArgumentMapping as CA
 import qualified Crepitans.Exceptions as CE
+import qualified Crepitans.Log as CL
 
 -- | Load a binary (of any supported format) from disk
 loadBinary
@@ -54,3 +77,90 @@ formatBinaryHeader
 formatBinaryHeader b =
   case b of
     CA.ELFBinary ehi -> return (prettyELFHeader ehi)
+
+logDiscoveryEvent
+  :: (DMC.MemWidth (DMC.ArchAddrWidth arch))
+  => LJ.LogAction IO CL.LogMessage
+  -> CArch.ArchRepr arch
+  -> DMD.DiscoveryEvent arch
+  -> IO ()
+logDiscoveryEvent logAction archRepr evt =
+  LJ.writeLog logAction (CL.DiscoveryEvent archRepr evt)
+
+resolveFunctions
+  :: DMD.DiscoveryOptions
+  -> DMD.DiscoveryState arch
+  -> DMUI.IncCompM (DMD.DiscoveryEvent arch) r (DMD.DiscoveryState arch)
+resolveFunctions disOpts ds0 = DMAI.withArchConstraints archInfo $ do
+  case Map.minViewWithKey (ds0 ^. DMD.unexploredFunctions) of
+    Nothing -> return ds0
+    Just ((funcEntryAddr, reason), restUnexplored) -> do
+      let ds1 = ds0 & DMD.unexploredFunctions .~ restUnexplored
+      DMUI.incCompLog (DMD.ReportAnalyzeFunction funcEntryAddr)
+      if Map.member funcEntryAddr (ds1 ^. DMD.funInfo)
+        then resolveFunctions disOpts ds1
+        else do
+          (ds2, Some f) <- DMUI.liftIncComp id $ DMD.discoverFunction disOpts funcEntryAddr reason ds1 []
+          DMUI.incCompLog (DMD.ReportAnalyzeFunctionDone f)
+          resolveFunctions disOpts ds2
+  where
+    archInfo = DMD.archInfo ds0
+
+incrementalDiscovery
+  :: DMD.DiscoveryOptions
+  -> DMD.DiscoveryState arch
+  -> DMUI.IncCompM (DMD.DiscoveryEvent arch) r (DMD.DiscoveryState arch)
+incrementalDiscovery disOpts ds0 = DMAI.withArchConstraints archInfo $ do
+  let ds1 = ds0 & DMD.markAddrsAsFunction DMD.InitAddr (Map.keys (DMD.symbolNames ds0))
+  resolveFunctions disOpts ds1
+  where
+    archInfo = DMD.archInfo ds0
+
+loadedSymbols
+  :: ( w ~ DMC.ArchAddrWidth arch
+     , DMB.BinaryLoader arch binFmt
+     )
+  => DMB.LoadedBinary arch binFmt
+  -> Map.Map (DMM.MemSegmentOff w) BS.ByteString
+loadedSymbols lb = Map.fromList $
+  [ (memSegOff, symName)
+  | Just eps <- return (DMB.entryPoints lb)
+  , memSegOff <- F.toList eps
+  , Just symName <- return (DMB.symbolFor lb (DMM.segoffAddr memSegOff))
+  ]
+
+loadELFWith
+  :: ( w ~ DMC.ArchAddrWidth arch
+     , DMB.BinaryLoader arch (DE.ElfHeaderInfo w)
+     )
+  => LJ.LogAction IO CL.LogMessage
+  -> DE.ElfHeaderInfo w
+  -> CArch.ArchRepr arch
+  -> DMAI.ArchitectureInfo arch
+  -> IO CA.DiscoveryInfo
+loadELFWith logAction ehi archRepr archInfo = do
+  lb <- DMB.loadBinary DMML.defaultLoadOptions ehi
+
+  DMAI.withArchConstraints archInfo $ do
+    let addrSyms = loadedSymbols lb
+    let s0 = DMD.emptyDiscoveryState (DMB.memoryImage lb) addrSyms archInfo
+    DMUI.processIncCompLogs (logDiscoveryEvent logAction archRepr) $ DMUI.runIncCompM $ do
+      s1 <- incrementalDiscovery DMD.defaultDiscoveryOptions s0
+      return (CA.DiscoveryInfoWith (CA.ELFBinary ehi) lb archRepr s1)
+
+discoverFunctions
+  :: LJ.LogAction IO CL.LogMessage
+  -> CA.Binary
+  -> IO CA.DiscoveryInfo
+discoverFunctions logAction bin =
+  case bin of
+    CA.ELFBinary ehi ->
+      let hdr = DE.header ehi
+      in case (DE.headerClass hdr, DE.headerMachine hdr) of
+        (DE.ELFCLASS64, DE.EM_X86_64) -> loadELFWith logAction ehi CArch.X86_64 DMX.x86_64_linux_info
+        (DE.ELFCLASS64, DE.EM_PPC64) -> do
+          lb <- DMB.loadBinary DMML.defaultLoadOptions ehi
+          loadELFWith logAction ehi CArch.PPC64 (DMP.ppc64_linux_info lb)
+        (DE.ELFCLASS32, DE.EM_PPC) -> loadELFWith logAction ehi CArch.PPC32 DMP.ppc32_linux_info
+        (DE.ELFCLASS32, DE.EM_ARM) -> loadELFWith logAction ehi CArch.AArch32 DMA.arm_linux_info
+        (klass, mach) -> CMC.throwM (CE.UnsupportedELFArchitecture klass mach)

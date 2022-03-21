@@ -7,10 +7,12 @@
 -- languages (and back)
 module Crepitans.ArgumentMapping (
   -- * Value types
-  Binary(..)
+    Binary(..)
+  , DiscoveryInfo(..)
   -- * Scripting language wrappers
   , ArgumentK
   , BinaryK
+  , DiscoveryK
   , PathK
   , StringK
   , Argument(..)
@@ -27,24 +29,40 @@ import qualified Data.Parameterized.Context as Ctx
 import qualified Data.Vector as DV
 import qualified Prettyprinter as PP
 
+import qualified Data.Macaw.BinaryLoader as DMB
+import qualified Data.Macaw.Discovery as DMD
+
+import qualified Crepitans.Architecture as CA
 import qualified Crepitans.Panic as CP
 
 -- | A wrapper around any of the binary formats supported by the library
+--
+-- These are *raw* binary formats with minimal parsing and no code discovery
 data Binary where
   ELFBinary :: DE.ElfHeaderInfo w -> Binary
 
+-- | The results of running code discovery
+--
+-- This contains an arch repr to enable recovering instances, as well as a
+-- reference to the original binary (which can be useful in case multiple
+-- binaries are being examined concurrently)
+data DiscoveryInfo where
+  DiscoveryInfoWith :: (DMB.BinaryLoader arch binFmt) => Binary -> DMB.LoadedBinary arch binFmt -> CA.ArchRepr arch -> DMD.DiscoveryState arch -> DiscoveryInfo
 
 -- | Type-level GADT tags for the 'Argument' type
 data ArgumentK = BinaryK
                | PathK
                | StringK
+               | DiscoveryK
 
 type BinaryK = 'BinaryK
 type PathK = 'PathK
 type StringK = 'StringK
+type DiscoveryK = 'DiscoveryK
 
 data ArgumentRepr tp where
   BinaryRepr :: ArgumentRepr BinaryK
+  DiscoveryRepr :: ArgumentRepr DiscoveryK
   PathRepr :: ArgumentRepr PathK
   StringRepr :: ArgumentRepr StringK
 
@@ -52,6 +70,7 @@ deriving instance Show (ArgumentRepr tp)
 
 data Argument (tp :: ArgumentK) where
   Binary :: Binary -> Argument BinaryK
+  DiscoveryInfo :: DiscoveryInfo -> Argument DiscoveryK
   Path :: FilePath -> Argument PathK
   String_ :: String -> Argument StringK
 

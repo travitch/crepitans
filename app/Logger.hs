@@ -36,7 +36,7 @@ consumeLogs c = do
   case mmsg of
     Nothing -> return ()
     Just msg -> do
-      PRT.hPutDoc SI.stdout (PP.pretty msg)
+      PRT.hPutDoc SI.stdout (PP.pretty msg <> PP.line)
       consumeLogs c
 
 -- | A logger to record all of the output from the analysis

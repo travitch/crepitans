@@ -21,6 +21,7 @@ extra-source-files: CHANGELOG.md
 
 library
     exposed-modules:  Crepitans
+                      Crepitans.Architecture
                       Crepitans.ArgumentMapping
                       Crepitans.Exceptions
                       Crepitans.Library
@@ -36,6 +37,7 @@ library
     build-depends:    base >=4.13 && < 5,
                       text >= 1 && < 2,
                       bytestring,
+                      containers,
                       exceptions,
                       filepath,
                       lumberjack >= 1 && < 2,
@@ -46,12 +48,17 @@ library
                       vector,
                       elf-edit,
                       galois-dwarf,
+                      lens,
                       what4,
                       semmc,
                       macaw-base,
                       macaw-loader,
+                      macaw-loader-ppc,
+                      macaw-loader-x86,
+                      macaw-loader-aarch32,
                       macaw-aarch32,
                       macaw-ppc,
+                      macaw-x86,
                       macaw-riscv,
                       husk-scheme
     hs-source-dirs:   src
