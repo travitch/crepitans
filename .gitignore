@@ -1,0 +1,4 @@
+/.ghc.*
+/dist-newstyle
+/cabal.project
+/cabal.project.local

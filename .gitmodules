@@ -1,0 +1,51 @@
+[submodule "deps/husk-scheme"]
+	path = deps/husk-scheme
+	url = git@github.com:justinethier/husk-scheme.git
+[submodule "deps/macaw"]
+	path = deps/macaw
+	url = git@github.com:GaloisInc/macaw.git
+[submodule "deps/what4"]
+	path = deps/what4
+	url = git@github.com:GaloisInc/what4.git
+[submodule "deps/crucible"]
+	path = deps/crucible
+	url = git@github.com:GaloisInc/crucible.git
+[submodule "deps/semmc"]
+	path = deps/semmc
+	url = git@github.com:GaloisInc/semmc.git
+[submodule "deps/dwarf"]
+	path = deps/dwarf
+	url = git@github.com:GaloisInc/dwarf.git
+[submodule "deps/elf-edit"]
+	path = deps/elf-edit
+	url = git@github.com:GaloisInc/elf-edit.git
+[submodule "deps/flexdis86"]
+	path = deps/flexdis86
+	url = git@github.com:GaloisInc/flexdis86.git
+[submodule "deps/what4-serialize"]
+	path = deps/what4-serialize
+	url = git@github.com:GaloisInc/what4-serialize.git
+[submodule "deps/dismantle"]
+	path = deps/dismantle
+	url = git@github.com:travitch/dismantle.git
+[submodule "deps/llvm-pretty"]
+	path = deps/llvm-pretty
+	url = git@github.com:elliottt/llvm-pretty.git
+[submodule "deps/asl-translator"]
+	path = deps/asl-translator
+	url = git@github.com:GaloisInc/asl-translator.git
+[submodule "deps/grift"]
+	path = deps/grift
+	url = git@github.com:GaloisInc/grift.git
+[submodule "deps/arm-asl-parser"]
+	path = deps/arm-asl-parser
+	url = git@github.com:GaloisInc/arm-asl-parser.git
+[submodule "deps/bv-sized-float"]
+	path = deps/bv-sized-float
+	url = git@github.com:GaloisInc/bv-sized-float.git
+[submodule "deps/macaw-loader"]
+	path = deps/macaw-loader
+	url = git@github.com:GaloisInc/macaw-loader.git
+[submodule "deps/softfloat-hs"]
+	path = deps/softfloat-hs
+	url = git@github.com:GaloisInc/softfloat-hs.git

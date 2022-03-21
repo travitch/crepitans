@@ -1,0 +1,80 @@
+cabal-version:      2.4
+name:               crepitans
+version:            0.1.0.0
+synopsis:           A scriptable interface for binary exploration
+
+-- A longer description of the package.
+-- description:
+homepage:
+
+-- A URL where users can report bugs.
+-- bug-reports:
+license:            BSD-3-Clause
+license-file:       LICENSE
+author:             Tristan Ravitch
+maintainer:         tristan@ravit.ch
+
+-- A copyright notice.
+-- copyright:
+category:           Reverse Engineering
+extra-source-files: CHANGELOG.md
+
+library
+    exposed-modules:  Crepitans
+                      Crepitans.ArgumentMapping
+                      Crepitans.Exceptions
+                      Crepitans.Library
+                      Crepitans.Library.Load
+                      Crepitans.Library.Scripting
+                      Crepitans.Log
+                      Crepitans.Panic
+                      Crepitans.Script.Fingerprint
+                      Crepitans.Script.Scheme
+
+    -- Modules included in this library but not exported.
+    -- other-modules:
+    build-depends:    base >=4.13 && < 5,
+                      text >= 1 && < 2,
+                      bytestring,
+                      exceptions,
+                      filepath,
+                      lumberjack >= 1 && < 2,
+                      mtl,
+                      panic,
+                      prettyprinter,
+                      parameterized-utils,
+                      vector,
+                      elf-edit,
+                      galois-dwarf,
+                      what4,
+                      semmc,
+                      macaw-base,
+                      macaw-loader,
+                      macaw-aarch32,
+                      macaw-ppc,
+                      macaw-riscv,
+                      husk-scheme
+    hs-source-dirs:   src
+    default-language: Haskell2010
+    ghc-options:      -Wall -Wcompat
+
+executable crepitans
+    main-is:          Main.hs
+
+
+    other-modules:    Logger
+                      Options
+
+    build-depends:
+        base,
+        async,
+        optparse-applicative >= 0.15 && < 0.18,
+        text,
+        lumberjack,
+        prettyprinter,
+        prettyprinter-ansi-terminal,
+        crepitans
+
+    hs-source-dirs:   app
+    default-language: Haskell2010
+    ghc-options:      -Wall -Wcompat
