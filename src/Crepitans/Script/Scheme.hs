@@ -9,6 +9,7 @@ import           Control.Monad.IO.Class ( MonadIO, liftIO )
 import           Control.Monad.Trans ( lift )
 import qualified Data.Dynamic as DD
 import qualified Data.Foldable as F
+import qualified Data.Parameterized.Classes as DPC
 import qualified Data.Parameterized.Context as Ctx
 import qualified Data.Text as DT
 import qualified Data.Vector as DV
@@ -23,6 +24,10 @@ import qualified Crepitans.Exceptions as CE
 import qualified Crepitans.Library.Scripting as CLS
 import qualified Crepitans.Log as CL
 
+-- | Unwrap Lisp values back into Haskell
+--
+-- Note that this goes through the Haskell 'Data.Dynamic' API, as Haskell values
+-- are represented as Opaque terms in Scheme
 lispToHaskell :: LST.LispVal -> CA.ArgumentRepr tp -> IO (Maybe (CA.Argument tp))
 lispToHaskell lv rep =
   case (rep, lv) of
@@ -33,6 +38,7 @@ lispToHaskell lv rep =
       | Just di <- DD.fromDynamic dyn -> return (Just (CA.DiscoveryInfo di))
     _ -> return Nothing
 
+-- | Inject Haskell values into Scheme
 haskellToLisp :: CA.Argument tp -> LST.LispVal
 haskellToLisp a =
   case a of
@@ -41,6 +47,10 @@ haskellToLisp a =
     CA.String_ s -> LST.String s
     CA.Path s -> LST.String s
 
+-- | Pretty print the type of a Scheme value
+--
+-- Note that these names do not come from Husk scheme itself, but should be
+-- representative
 lispValueName :: LST.LispVal -> String
 lispValueName lv =
   case lv of
@@ -73,6 +83,7 @@ lispValueName lv =
     LST.EvalFunc {} -> "eval-func"
     LST.IOFunc {} -> "io-func"
 
+-- | The mapping between Scheme and Haskell values
 schemeMapping :: CA.ArgumentMapping IO LST.LispVal
 schemeMapping =
   CA.ArgumentMapping { CA.toHaskell = lispToHaskell
@@ -80,9 +91,11 @@ schemeMapping =
                      , CA.valueTypeName = lispValueName
                      }
 
+-- | A list of top-level Scheme forms to be evaluated
 newtype Program = Program { asLispVals :: [LST.LispVal] }
   deriving (Show)
 
+-- | Parse the provided script contents into a Scheme program (a list of top-level forms)
 parseScript :: (CMC.MonadThrow m) => DT.Text -> m Program
 parseScript scriptContents =
   case LSP.readExprList (DT.unpack scriptContents) of
@@ -92,9 +105,18 @@ parseScript scriptContents =
 data FunctionDefinition where
   F :: String -> Ctx.Assignment CA.ArgumentRepr tps -> (Ctx.Assignment CA.Argument tps -> IO (CA.Argument r)) -> FunctionDefinition
 
+-- | Extract the name of a 'FunctionDefinition' (the name exposed to Scheme)
 functionDefinitionName :: FunctionDefinition -> String
 functionDefinitionName (F name _ _) = name
 
+-- | Convert a 'FunctionDefinition' into a Scheme function by applying the
+-- automatic argument translation and type checking implemented in the argument
+-- mapping module.
+--
+-- The automated type checking throws an exception if the Scheme values passed
+-- to the function are not the expected types.  The expected types are encoded
+-- using GADT type tags (see the 'Crepitans.ArgumentMapping' for details). Type
+-- errors during this run-time argument translation phase are non-recoverable.
 toFunc
   :: CA.ArgumentMapping IO LST.LispVal
   -> FunctionDefinition
@@ -105,11 +127,15 @@ toFunc mapping (F name argumentReprs f) = LST.CustFunc $ \actuals -> do
     Right wrappedActuals -> lift (CA.fromHaskell mapping <$> f wrappedActuals)
     Left err -> CMC.throwM (CE.ArgumentMappingError err)
 
+-- | This list defines bindings of all of the functions exported to Scheme
+--
+-- The 'FunctionDefinition' (via the 'F' constructor) makes the environment
+-- initialization a bit easier and more regular
 libraryFunctions :: LJ.LogAction IO CL.LogMessage -> [FunctionDefinition]
 libraryFunctions logAction =
-  [ F "load-binary" (Ctx.Empty Ctx.:> CA.PathRepr) CLS.loadBinary
-  , F "format-binary-header" (Ctx.Empty Ctx.:> CA.BinaryRepr) CLS.formatBinaryHeader
-  , F "discover-functions" (Ctx.Empty Ctx.:> CA.BinaryRepr) (CLS.discoverFunctions logAction)
+  [ F "load-binary" DPC.knownRepr CLS.loadBinary
+  , F "format-binary-header" DPC.knownRepr CLS.formatBinaryHeader
+  , F "discover-functions" DPC.knownRepr (CLS.discoverFunctions logAction)
   ]
 
 -- | Introduce all of the value and function bindings into the Scheme

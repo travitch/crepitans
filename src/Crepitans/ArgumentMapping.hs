@@ -1,8 +1,10 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TypeSynonymInstances #-}
 -- | Data types and utilities for mapping arguments from Haskell to scripting
 -- languages (and back)
 module Crepitans.ArgumentMapping (
@@ -22,9 +24,10 @@ module Crepitans.ArgumentMapping (
   , mapToHaskell
   ) where
 
-import           Control.Monad.Trans ( lift )
 import qualified Control.Monad.Except as CME
+import           Control.Monad.Trans ( lift )
 import qualified Data.ElfEdit as DE
+import qualified Data.Parameterized.Classes as DPC
 import qualified Data.Parameterized.Context as Ctx
 import qualified Data.Vector as DV
 import qualified Prettyprinter as PP
@@ -60,6 +63,10 @@ type PathK = 'PathK
 type StringK = 'StringK
 type DiscoveryK = 'DiscoveryK
 
+-- | Run-time representatives of all of the values that can be shared between Haskell and Scheme
+--
+-- These are used in the signatures of functions and for type testing when
+-- calling Haskell from Scheme
 data ArgumentRepr tp where
   BinaryRepr :: ArgumentRepr BinaryK
   DiscoveryRepr :: ArgumentRepr DiscoveryK
@@ -68,6 +75,20 @@ data ArgumentRepr tp where
 
 deriving instance Show (ArgumentRepr tp)
 
+instance DPC.KnownRepr ArgumentRepr BinaryK where knownRepr = BinaryRepr
+instance DPC.KnownRepr ArgumentRepr DiscoveryK where knownRepr = DiscoveryRepr
+instance DPC.KnownRepr ArgumentRepr PathK where knownRepr = PathRepr
+instance DPC.KnownRepr ArgumentRepr StringK where knownRepr = StringRepr
+
+-- | Wrappers for value types that are shared between Haskell and Scheme
+--
+-- These are a bit more coarse-grained than the Haskell APIs that are being
+-- exposed to make use easier. Where necessary, these values maintain extra
+-- run-time representative values to enable type recovery by pattern matching.
+-- Note that these are mostly just wrappers at the language interface; the
+-- Haskell functions remove these wrappers before operating on terms. At least
+-- the Scheme frontend does not use them directly; it wraps the underlying
+-- values in Dynamic values.
 data Argument (tp :: ArgumentK) where
   Binary :: Binary -> Argument BinaryK
   DiscoveryInfo :: DiscoveryInfo -> Argument DiscoveryK
@@ -80,6 +101,9 @@ data Argument (tp :: ArgumentK) where
 -- (e.g., an environment) if needed.
 --
 -- The type parameter is the type of run-time values for the language
+--
+-- Note that the Monad is a parameter (m) so that it can be pure or in IO, as
+-- needed.
 data ArgumentMapping m a =
   ArgumentMapping { toHaskell :: forall tp . a -> ArgumentRepr tp -> m (Maybe (Argument tp))
                   , fromHaskell :: forall tp . Argument tp -> a
@@ -115,6 +139,10 @@ applyMapping mapping context actuals idx expectedRepr
         Nothing -> CME.throwError (ArgumentTypeError context (Ctx.indexVal idx) expectedRepr (valueTypeName mapping actual))
   | otherwise = CP.panic CP.Evaluator "applyMapping" ["Argument list length mismatch should have been caught in `mapToHaskell`"]
 
+-- | Given run-time dynamic values (of type @a@) and a 'Ctx.Assignment' of
+-- expected types, do run-time type checking while translating into Haskell
+-- values. This can result in an 'ArgumentTypeError' if the types are not
+-- correct.
 mapToHaskell
   :: (Monad m)
   => ArgumentMapping m a
