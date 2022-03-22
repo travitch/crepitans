@@ -7,8 +7,10 @@ import qualified Control.Monad.Catch as CMC
 import qualified Control.Monad.Except as CME
 import           Control.Monad.IO.Class ( MonadIO, liftIO )
 import           Control.Monad.Trans ( lift )
+import qualified Data.Array as DA
 import qualified Data.Dynamic as DD
 import qualified Data.Foldable as F
+import           Data.Maybe ( catMaybes )
 import qualified Data.Parameterized.Classes as DPC
 import qualified Data.Parameterized.Context as Ctx
 import qualified Data.Text as DT
@@ -28,14 +30,32 @@ import qualified Crepitans.Log as CL
 --
 -- Note that this goes through the Haskell 'Data.Dynamic' API, as Haskell values
 -- are represented as Opaque terms in Scheme
-lispToHaskell :: LST.LispVal -> CA.ArgumentRepr tp -> IO (Maybe (CA.Argument tp))
-lispToHaskell lv rep =
+lispToHaskell :: CA.ArgumentRepr tp -> LST.LispVal -> IO (Maybe (CA.Argument tp))
+lispToHaskell rep lv =
   case (rep, lv) of
     (CA.PathRepr, LST.String fp) -> return (Just (CA.Path fp))
     (CA.BinaryRepr, LST.Opaque dyn)
       | Just bin <- DD.fromDynamic dyn -> return (Just (CA.Binary bin))
     (CA.DiscoveryRepr, LST.Opaque dyn)
       | Just di <- DD.fromDynamic dyn -> return (Just (CA.DiscoveryInfo di))
+    (CA.FunctionRepr, LST.Opaque dyn)
+      | Just f <- DD.fromDynamic dyn -> return (Just (CA.Function f))
+    (CA.AddressRepr, LST.Opaque dyn)
+      | Just a <- DD.fromDynamic dyn -> return (Just (CA.Address a))
+    (CA.VectorRepr valRepr, LST.Vector vals) -> do
+      -- Try to convert all of the contained values into the correct type
+      -- (encoded by valRepr); if we don't get enough values of the right type,
+      -- it means that at least one was the wrong type and the whole conversion
+      -- fails.
+      --
+      -- FIXME: We might need to make this an Either type so that we can get a
+      -- more precise error about this (e.g., reporting the index of the element
+      -- with the wrong type)
+      margs <- mapM (lispToHaskell valRepr) (F.toList vals)
+      let args = catMaybes margs
+      case length args == F.length vals of
+        True -> return (Just (CA.Vector_ valRepr (DV.fromList args)))
+        False -> return Nothing
     _ -> return Nothing
 
 -- | Inject Haskell values into Scheme
@@ -44,8 +64,11 @@ haskellToLisp a =
   case a of
     CA.Binary bin -> LST.Opaque (DD.toDyn bin)
     CA.DiscoveryInfo di -> LST.Opaque (DD.toDyn di)
+    CA.Function f -> LST.Opaque (DD.toDyn f)
+    CA.Address addr -> LST.Opaque (DD.toDyn addr)
     CA.String_ s -> LST.String s
     CA.Path s -> LST.String s
+    CA.Vector_ _repr v -> LST.Vector (DA.listArray (0, DV.length v - 1) [haskellToLisp val | val <- DV.toList v])
 
 -- | Pretty print the type of a Scheme value
 --
@@ -136,6 +159,9 @@ libraryFunctions logAction =
   [ F "load-binary" DPC.knownRepr CLS.loadBinary
   , F "format-binary-header" DPC.knownRepr CLS.formatBinaryHeader
   , F "discover-functions" DPC.knownRepr (CLS.discoverFunctions logAction)
+  , F "discovered-functions" DPC.knownRepr CLS.discoveredFunctions
+  , F "function-address" DPC.knownRepr CLS.functionAddress
+  , F "function-name" DPC.knownRepr CLS.functionName
   ]
 
 -- | Introduce all of the value and function bindings into the Scheme
@@ -169,7 +195,7 @@ run
   -> DT.Text
   -- ^ The contents of the script to execute
   -> m ()
-run logAction scriptPath scriptContents = do
+run logAction _scriptPath scriptContents = do
   prog <- parseScript scriptContents
   env <- liftIO LSC.r7rsEnv'
   initializeEnvironment logAction env

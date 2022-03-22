@@ -35,6 +35,7 @@ library
     -- Modules included in this library but not exported.
     -- other-modules:
     build-depends:    base >=4.13 && < 5,
+                      array,
                       text >= 1 && < 2,
                       bytestring,
                       containers,
@@ -45,6 +46,7 @@ library
                       panic,
                       prettyprinter,
                       parameterized-utils,
+                      utf8-string >= 1 && < 1.1,
                       vector,
                       elf-edit,
                       galois-dwarf,

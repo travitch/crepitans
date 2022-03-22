@@ -4,15 +4,20 @@ module Crepitans.Library.Load (
     loadBinary
   , formatBinaryHeader
   , discoverFunctions
+  , discoveredFunctions
+  , functionAddress
+  , functionName
   ) where
 
 import           Control.Lens ( (&), (^.), (.~) )
 import qualified Control.Monad.Catch as CMC
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.UTF8 as DBU
 import qualified Data.ElfEdit as DE
 import qualified Data.Foldable as F
 import qualified Data.Map.Strict as Map
 import           Data.Parameterized.Some ( Some(..) )
+import qualified Data.Vector as DV
 import qualified Lumberjack as LJ
 import qualified Prettyprinter as PP
 import qualified Prettyprinter.Render.String as PRS
@@ -146,7 +151,8 @@ loadELFWith logAction ehi archRepr archInfo = do
     let s0 = DMD.emptyDiscoveryState (DMB.memoryImage lb) addrSyms archInfo
     DMUI.processIncCompLogs (logDiscoveryEvent logAction archRepr) $ DMUI.runIncCompM $ do
       s1 <- incrementalDiscovery DMD.defaultDiscoveryOptions s0
-      return (CA.DiscoveryInfoWith (CA.ELFBinary ehi) lb archRepr s1)
+      let binfo = CA.DiscoveryInfoWith_ (CA.ELFBinary ehi) lb archRepr s1
+      return (CA.DiscoveryInfoWith binfo)
 
 discoverFunctions
   :: LJ.LogAction IO CL.LogMessage
@@ -164,3 +170,31 @@ discoverFunctions logAction bin =
         (DE.ELFCLASS32, DE.EM_PPC) -> loadELFWith logAction ehi CArch.PPC32 DMP.ppc32_linux_info
         (DE.ELFCLASS32, DE.EM_ARM) -> loadELFWith logAction ehi CArch.AArch32 DMA.arm_linux_info
         (klass, mach) -> CMC.throwM (CE.UnsupportedELFArchitecture klass mach)
+
+discoveredFunctions
+  :: CA.DiscoveryInfo
+  -> IO (DV.Vector CA.Function)
+discoveredFunctions (CA.DiscoveryInfoWith di@(CA.DiscoveryInfoWith_ _bin _lb _archRepr ds)) =
+  return (DV.fromList [ CA.FunctionWith di dfi
+                      | Some dfi <- Map.elems (ds ^. DMD.funInfo)
+                      ])
+
+functionAddress
+  :: CA.Function
+  -> IO CA.Address
+functionAddress (CA.FunctionWith (CA.DiscoveryInfoWith_ _bin _lb archRepr _ds) dfi) =
+  return (CA.SegmentOffset archRepr (DMD.discoveredFunAddr dfi))
+
+-- | Extract the name of a function
+--
+-- Note that function names are both optional and bytestrings. This function
+-- with synthesize a name based on the address if there is no natural name. If
+-- the name cannot be decoded as utf8, invalid bytes will be replaced with a
+-- default.
+functionName
+  :: CA.Function
+  -> IO String
+functionName (CA.FunctionWith (CA.DiscoveryInfoWith_ {}) dfi) =
+  return $ maybe def DBU.toString (DMD.discoveredFunSymbol dfi)
+  where
+    def = "func" ++ show (DMD.discoveredFunAddr dfi)
