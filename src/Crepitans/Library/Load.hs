@@ -175,14 +175,14 @@ discoveredFunctions
   :: CW.DiscoveryInfo
   -> IO (DV.Vector CW.Function)
 discoveredFunctions (CW.DiscoveryInfoWith di@(CW.DiscoveryInfoWith_ _bin _lb _archRepr ds)) =
-  return (DV.fromList [ CW.FunctionWith di dfi
+  return (DV.fromList [ CW.BinaryFunctionWith di dfi
                       | Some dfi <- Map.elems (ds ^. DMD.funInfo)
                       ])
 
 functionAddress
   :: CW.Function
   -> IO CW.Address
-functionAddress (CW.FunctionWith (CW.DiscoveryInfoWith_ _bin _lb archRepr _ds) dfi) =
+functionAddress (CW.BinaryFunctionWith (CW.DiscoveryInfoWith_ _bin _lb archRepr _ds) dfi) =
   return (CW.SegmentOffset archRepr (DMD.discoveredFunAddr dfi))
 
 -- | Extract the name of a function
@@ -194,7 +194,7 @@ functionAddress (CW.FunctionWith (CW.DiscoveryInfoWith_ _bin _lb archRepr _ds) d
 functionName
   :: CW.Function
   -> IO String
-functionName (CW.FunctionWith (CW.DiscoveryInfoWith_ {}) dfi) =
+functionName (CW.BinaryFunctionWith (CW.DiscoveryInfoWith_ {}) dfi) =
   return $ maybe def DBU.toString (DMD.discoveredFunSymbol dfi)
   where
     def = "func" ++ show (DMD.discoveredFunAddr dfi)

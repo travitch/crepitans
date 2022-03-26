@@ -65,7 +65,7 @@ data DiscoveryInfo where
 -- | A wrapper around machine functions, along with the metadata necessary to do
 -- additional analysis later
 data Function where
-  FunctionWith :: DiscoveryInfoWith arch -> DMD.DiscoveryFunInfo arch ids -> Function
+  BinaryFunctionWith :: DiscoveryInfoWith arch -> DMD.DiscoveryFunInfo arch ids -> Function
 
 -- | Different forms of address that a user can pass around
 --
