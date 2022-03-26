@@ -39,20 +39,20 @@ import qualified Data.Macaw.X86 as DMX
 import qualified Data.Macaw.Utils.IncComp as DMUI
 
 import qualified Crepitans.Architecture as CArch
-import qualified Crepitans.ArgumentMapping as CA
 import qualified Crepitans.Exceptions as CE
 import qualified Crepitans.Log as CL
+import qualified Crepitans.WrapperTypes as CW
 
 -- | Load a binary (of any supported format) from disk
 loadBinary
   :: FilePath
   -- ^ The path of a binary to load
-  -> IO CA.Binary
+  -> IO CW.Binary
 loadBinary p = do
   bytes <- BS.readFile p
   case DE.decodeElfHeaderInfo bytes of
     Left (offset, msg) -> CMC.throwM (CE.ELFHeaderDecodeError (fromIntegral offset) msg)
-    Right (DE.SomeElf ehi) -> return (CA.ELFBinary ehi)
+    Right (DE.SomeElf ehi) -> return (CW.ELFBinary ehi)
 
 prettyELFHeader
   :: DE.ElfHeaderInfo w
@@ -77,11 +77,11 @@ prettyELFHeader ehi = PRS.renderString (PP.layoutCompact doc)
 --
 -- Note that the format of this information is not guaranteed to remain stable.
 formatBinaryHeader
-  :: CA.Binary
+  :: CW.Binary
   -> IO String
 formatBinaryHeader b =
   case b of
-    CA.ELFBinary ehi -> return (prettyELFHeader ehi)
+    CW.ELFBinary ehi -> return (prettyELFHeader ehi)
 
 logDiscoveryEvent
   :: (DMC.MemWidth (DMC.ArchAddrWidth arch))
@@ -142,7 +142,7 @@ loadELFWith
   -> DE.ElfHeaderInfo w
   -> CArch.ArchRepr arch
   -> DMAI.ArchitectureInfo arch
-  -> IO CA.DiscoveryInfo
+  -> IO CW.DiscoveryInfo
 loadELFWith logAction ehi archRepr archInfo = do
   lb <- DMB.loadBinary DMML.defaultLoadOptions ehi
 
@@ -151,16 +151,16 @@ loadELFWith logAction ehi archRepr archInfo = do
     let s0 = DMD.emptyDiscoveryState (DMB.memoryImage lb) addrSyms archInfo
     DMUI.processIncCompLogs (logDiscoveryEvent logAction archRepr) $ DMUI.runIncCompM $ do
       s1 <- incrementalDiscovery DMD.defaultDiscoveryOptions s0
-      let binfo = CA.DiscoveryInfoWith_ (CA.ELFBinary ehi) lb archRepr s1
-      return (CA.DiscoveryInfoWith binfo)
+      let binfo = CW.DiscoveryInfoWith_ (CW.ELFBinary ehi) lb archRepr s1
+      return (CW.DiscoveryInfoWith binfo)
 
 discoverFunctions
   :: LJ.LogAction IO CL.LogMessage
-  -> CA.Binary
-  -> IO CA.DiscoveryInfo
+  -> CW.Binary
+  -> IO CW.DiscoveryInfo
 discoverFunctions logAction bin =
   case bin of
-    CA.ELFBinary ehi ->
+    CW.ELFBinary ehi ->
       let hdr = DE.header ehi
       in case (DE.headerClass hdr, DE.headerMachine hdr) of
         (DE.ELFCLASS64, DE.EM_X86_64) -> loadELFWith logAction ehi CArch.X86_64 DMX.x86_64_linux_info
@@ -172,18 +172,18 @@ discoverFunctions logAction bin =
         (klass, mach) -> CMC.throwM (CE.UnsupportedELFArchitecture klass mach)
 
 discoveredFunctions
-  :: CA.DiscoveryInfo
-  -> IO (DV.Vector CA.Function)
-discoveredFunctions (CA.DiscoveryInfoWith di@(CA.DiscoveryInfoWith_ _bin _lb _archRepr ds)) =
-  return (DV.fromList [ CA.FunctionWith di dfi
+  :: CW.DiscoveryInfo
+  -> IO (DV.Vector CW.Function)
+discoveredFunctions (CW.DiscoveryInfoWith di@(CW.DiscoveryInfoWith_ _bin _lb _archRepr ds)) =
+  return (DV.fromList [ CW.FunctionWith di dfi
                       | Some dfi <- Map.elems (ds ^. DMD.funInfo)
                       ])
 
 functionAddress
-  :: CA.Function
-  -> IO CA.Address
-functionAddress (CA.FunctionWith (CA.DiscoveryInfoWith_ _bin _lb archRepr _ds) dfi) =
-  return (CA.SegmentOffset archRepr (DMD.discoveredFunAddr dfi))
+  :: CW.Function
+  -> IO CW.Address
+functionAddress (CW.FunctionWith (CW.DiscoveryInfoWith_ _bin _lb archRepr _ds) dfi) =
+  return (CW.SegmentOffset archRepr (DMD.discoveredFunAddr dfi))
 
 -- | Extract the name of a function
 --
@@ -192,9 +192,9 @@ functionAddress (CA.FunctionWith (CA.DiscoveryInfoWith_ _bin _lb archRepr _ds) d
 -- the name cannot be decoded as utf8, invalid bytes will be replaced with a
 -- default.
 functionName
-  :: CA.Function
+  :: CW.Function
   -> IO String
-functionName (CA.FunctionWith (CA.DiscoveryInfoWith_ {}) dfi) =
+functionName (CW.FunctionWith (CW.DiscoveryInfoWith_ {}) dfi) =
   return $ maybe def DBU.toString (DMD.discoveredFunSymbol dfi)
   where
     def = "func" ++ show (DMD.discoveredFunAddr dfi)

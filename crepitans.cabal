@@ -31,6 +31,7 @@ library
                       Crepitans.Panic
                       Crepitans.Script.Fingerprint
                       Crepitans.Script.Scheme
+                      Crepitans.WrapperTypes
 
     -- Modules included in this library but not exported.
     -- other-modules:
