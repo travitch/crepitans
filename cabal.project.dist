@@ -26,8 +26,11 @@ packages: .
           deps/macaw/macaw-semmc
           deps/macaw/symbolic
           deps/macaw/x86
+          deps/macaw/x86_symbolic
           deps/macaw/macaw-ppc
+          deps/macaw/macaw-ppc-symbolic
           deps/macaw/macaw-aarch32
+          deps/macaw/macaw-aarch32-symbolic
           deps/macaw/macaw-riscv
           deps/husk-scheme
           deps/elf-edit

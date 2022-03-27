@@ -1,8 +1,12 @@
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE ExplicitNamespaces #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 -- | Wrapper types for the scripting interface
 --
@@ -14,8 +18,18 @@ module Crepitans.WrapperTypes (
     Binary(..)
   , DiscoveryInfo(..)
   , DiscoveryInfoWith(..)
+  , discoveryInfoArchRepr
   , Function(..)
   , Address(..)
+  -- ** Symbolic Execution
+  , SymbolicExecutionContext(..)
+  , executionFeatures
+  , solver
+  , BinarySymbolicExecutionContextWith(..)
+  , initialRegisters
+  , SymbolicExecutionConfig(..)
+  , SymbolicExecutionResult_(..)
+  , SymbolicExecutionResult(..)
   -- * Scripting language wrappers
   , ArgumentK
   , BinaryK
@@ -29,16 +43,30 @@ module Crepitans.WrapperTypes (
   , ArgumentRepr(..)
   ) where
 
+import qualified Control.Lens.TH as CLT
 import qualified Data.ElfEdit as DE
+import           Data.Parameterized.Some ( Some(..) )
 import qualified Data.Parameterized.Classes as DPC
 import           Data.Word ( Word64 )
+import           GHC.TypeLits ( type (<=) )
+import qualified What4.Expr.Builder as WEB
 
 import qualified Data.Macaw.BinaryLoader as DMB
 import qualified Data.Macaw.CFG.Core as DMC
 import qualified Data.Macaw.Discovery as DMD
-import qualified Data.Macaw.Memory as DMM
+import qualified Data.Macaw.Symbolic as DMS
+import qualified Lang.Crucible.Backend as LCB
+import qualified Lang.Crucible.Simulator as LCS
+import qualified Lang.Crucible.Types as LCT
 
 import qualified Crepitans.Architecture as CA
+import qualified Crepitans.Solver as CS
+
+type ArchConstraints arch w =
+  ( w ~ DMC.ArchAddrWidth arch
+  , 16 <= w
+  , DMS.SymArchConstraints arch
+  )
 
 -- | A wrapper around any of the binary formats supported by the library
 --
@@ -47,12 +75,17 @@ data Binary where
   ELFBinary :: DE.ElfHeaderInfo w -> Binary
 
 data DiscoveryInfoWith arch where
-  DiscoveryInfoWith_ :: (DMB.BinaryLoader arch binFmt, DMM.MemWidth (DMC.ArchAddrWidth arch))
+  DiscoveryInfoWith_ :: (DMB.BinaryLoader arch binFmt, ArchConstraints arch w)
                      => Binary
                      -> DMB.LoadedBinary arch binFmt
                      -> CA.ArchRepr arch
                      -> DMD.DiscoveryState arch
                      -> DiscoveryInfoWith arch
+
+discoveryInfoArchRepr
+  :: DiscoveryInfoWith arch
+  -> CA.ArchRepr arch
+discoveryInfoArchRepr (DiscoveryInfoWith_ _ _ rep _) = rep
 
 -- | The results of running code discovery
 --
@@ -65,7 +98,7 @@ data DiscoveryInfo where
 -- | A wrapper around machine functions, along with the metadata necessary to do
 -- additional analysis later
 data Function where
-  BinaryFunctionWith :: DiscoveryInfoWith arch -> DMD.DiscoveryFunInfo arch ids -> Function
+  BinaryFunctionWith :: (ArchConstraints arch w) => DiscoveryInfoWith arch -> DMD.DiscoveryFunInfo arch ids -> Function
 
 -- | Different forms of address that a user can pass around
 --
@@ -95,6 +128,56 @@ data Address where
   UserSpecifiedAddress :: Word64 -> Address
   -- | A memory segment offset, which is the address form used inside of macaw
   SegmentOffset :: CA.ArchRepr arch -> DMC.ArchSegmentOff arch -> Address
+
+-- | Symbolic execution configuration that is independent of the backend
+data SymbolicExecutionConfig p sym =
+  SymbolicExecutionConfig { _executionFeatures :: [LCS.GenericExecutionFeature sym]
+                          -- ^ Execution features to install when starting crucible
+                          , _solver :: CS.Solver
+                          -- ^ The solver to use for both path satisfiability
+                          -- and goal solving (if any)
+                          }
+
+$(CLT.makeLenses ''SymbolicExecutionConfig)
+
+-- | There are no lenses for the fields that are intended to be immutable
+data BinarySymbolicExecutionContextWith sym arch =
+  BinarySymEx { binaryDiscoveryInfo :: DiscoveryInfoWith arch
+              , binaryDiscoveryFunInfo :: Some (DMD.DiscoveryFunInfo arch)
+              , binaryArchVals :: DMS.ArchVals arch
+              , binaryArchRepr :: CA.ArchRepr arch
+              , _initialRegisters :: LCS.RegEntry sym (LCT.StructType (DMS.CtxToCrucibleType (DMS.ArchRegContext arch)))
+              }
+
+$(CLT.makeLenses ''BinarySymbolicExecutionContextWith)
+
+-- | All of the configuration options and initial state required to start
+-- symbolically executing a function.
+--
+-- This will be constructed from a 'Function' and have sufficient defaults to
+-- start symbolic execution immediately if desired. It will also expose enough
+-- knobs to customize symbolic execution as-needed (via a functional API)
+data SymbolicExecutionContext where
+  BinarySymbolicExecutionContext :: ( LCB.IsSymInterface sym
+                                    , sym ~ WEB.ExprBuilder t st fs
+                                    , ArchConstraints arch w
+                                    )
+                                 => sym
+                                 -> SymbolicExecutionConfig p sym
+                                 -> BinarySymbolicExecutionContextWith sym arch
+                                 -> SymbolicExecutionContext
+
+
+data SymbolicExecutionResult_ p sym ext arch tp =
+  SymbolicExecutionResult_ { result :: LCS.ExecResult p sym ext (LCS.RegEntry sym tp)
+                           , resultRepr :: LCT.TypeRepr tp
+                           }
+
+data SymbolicExecutionResult where
+  SymbolicExecutionResult :: (LCB.IsSymBackend sym bak)
+                          => bak
+                          -> SymbolicExecutionResult_ p sym ext arch tp
+                          -> SymbolicExecutionResult
 
 -- | Type-level GADT tags for the 'Argument' type
 data ArgumentK = BinaryK

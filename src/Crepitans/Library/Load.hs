@@ -1,5 +1,8 @@
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE ExplicitNamespaces #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE TypeOperators #-}
 module Crepitans.Library.Load (
     loadBinary
   , formatBinaryHeader
@@ -18,16 +21,18 @@ import qualified Data.Foldable as F
 import qualified Data.Map.Strict as Map
 import           Data.Parameterized.Some ( Some(..) )
 import qualified Data.Vector as DV
+import           GHC.TypeLits (type (<=))
 import qualified Lumberjack as LJ
 import qualified Prettyprinter as PP
 import qualified Prettyprinter.Render.String as PRS
 
-import qualified Data.Macaw.Architecture.Info as DMAI
 import qualified Data.Macaw.ARM as DMA
 import           Data.Macaw.ARM.ARMReg ()
+import           Data.Macaw.AArch32.Symbolic ()
+import qualified Data.Macaw.Architecture.Info as DMAI
 import qualified Data.Macaw.BinaryLoader as DMB
-import           Data.Macaw.BinaryLoader.PPC ()
 import           Data.Macaw.BinaryLoader.AArch32 ()
+import           Data.Macaw.BinaryLoader.PPC ()
 import           Data.Macaw.BinaryLoader.X86 ()
 import qualified Data.Macaw.CFG as DMC
 import qualified Data.Macaw.Discovery as DMD
@@ -35,8 +40,11 @@ import qualified Data.Macaw.Memory as DMM
 import qualified Data.Macaw.Memory.LoadCommon as DMML
 import qualified Data.Macaw.PPC as DMP
 import           Data.Macaw.PPC.PPCReg ()
-import qualified Data.Macaw.X86 as DMX
+import           Data.Macaw.PPC.Symbolic ()
+import qualified Data.Macaw.Symbolic as DMS
 import qualified Data.Macaw.Utils.IncComp as DMUI
+import qualified Data.Macaw.X86 as DMX
+import           Data.Macaw.X86.Symbolic ()
 
 import qualified Crepitans.Architecture as CArch
 import qualified Crepitans.Exceptions as CE
@@ -137,6 +145,8 @@ loadedSymbols lb = Map.fromList $
 loadELFWith
   :: ( w ~ DMC.ArchAddrWidth arch
      , DMB.BinaryLoader arch (DE.ElfHeaderInfo w)
+     , DMS.SymArchConstraints arch
+     , 16 <= w
      )
   => LJ.LogAction IO CL.LogMessage
   -> DE.ElfHeaderInfo w

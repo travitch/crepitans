@@ -8,6 +8,7 @@ import qualified Panic as P
 
 data Component = Loader
                | Evaluator
+               | SymbolicExecution
   deriving (Show)
 
 instance P.PanicComponent Component where

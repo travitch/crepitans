@@ -1,4 +1,5 @@
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE StandaloneDeriving #-}
 module Crepitans.Architecture (
   ArchRepr(..)
   ) where
@@ -18,3 +19,5 @@ data ArchRepr arch where
   PPC64 :: ArchRepr DMP.PPC64
   AArch32 :: ArchRepr DMA.ARM
   X86_64 :: ArchRepr DMX.X86_64
+
+deriving instance Show (ArchRepr arch)
