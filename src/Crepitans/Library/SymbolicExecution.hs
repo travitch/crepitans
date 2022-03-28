@@ -10,7 +10,6 @@ module Crepitans.Library.SymbolicExecution (
   ) where
 
 import           Control.Lens ( (^.) )
-import           Data.Bits ( (.|.) )
 import qualified Data.Parameterized.Context as Ctx
 import qualified Data.Parameterized.Nonce as DPN
 import           Data.Parameterized.Some ( Some(..) )
@@ -24,13 +23,7 @@ import qualified What4.BaseTypes as WT
 import qualified What4.Expr.Builder as WEB
 import qualified What4.FunctionName as WF
 import qualified What4.Interface as WI
-import qualified What4.ProblemFeatures as WP
 import qualified What4.ProgramLoc as WPL
-import qualified What4.Protocol.Online as WPO
-import qualified What4.Protocol.SMTLib2 as SMT2
-import qualified What4.Solver.CVC4 as CVC4
-import qualified What4.Solver.Yices as Yices
-import qualified What4.Solver.Z3 as Z3
 
 import qualified Data.Macaw.Architecture.Info as DMAI
 import qualified Data.Macaw.BinaryLoader as MBL
@@ -43,7 +36,6 @@ import           Data.Macaw.X86.Symbolic ()
 import           Data.Macaw.PPC.Symbolic ()
 import           Data.Macaw.AArch32.Symbolic ()
 import qualified Lang.Crucible.Backend as LCB
-import qualified Lang.Crucible.Backend.Online as LCBO
 import qualified Lang.Crucible.CFG.Core as LCCC
 import qualified Lang.Crucible.FunctionHandle as CFH
 import qualified Lang.Crucible.LLVM.DataLayout as LCLD
@@ -85,30 +77,6 @@ toCrucibleCFG archFns dfi = do
   let posFn = WPL.OtherPos . fromString . show
   DMS.mkFunCFG archFns halloc fnName posFn dfi
 
--- | There are some options here, but these are good defaults. We can make this
--- configurable later if we want
-defaultProblemFeatures :: WP.ProblemFeatures
-defaultProblemFeatures =     WP.useBitvectors
-                         .|. WP.useSymbolicArrays
-                         .|. WP.useStructs
-                         .|. WP.useLinearArithmetic
-
-data SomeOnlineSolver scope st fs where
-  SomeOnlineSolver :: (WPO.OnlineSolver solver) => LCBO.OnlineBackend solver scope st fs -> SomeOnlineSolver scope st fs
-
-type CVC4 = SMT2.Writer CVC4.CVC4
-type Yices = Yices.Connection
-type Z3 = SMT2.Writer Z3.Z3
-
-makeOnlineSolver
-  :: WEB.ExprBuilder scope st fs
-  -> CS.Solver
-  -> IO (SomeOnlineSolver scope st fs)
-makeOnlineSolver sym solver =
-  case solver of
-    CS.CVC4 -> SomeOnlineSolver <$> LCBO.newOnlineBackend @CVC4 sym defaultProblemFeatures
-    CS.Yices -> SomeOnlineSolver <$> LCBO.newOnlineBackend @Yices sym defaultProblemFeatures
-    CS.Z3 ->SomeOnlineSolver <$> LCBO.newOnlineBackend @Z3 sym defaultProblemFeatures
 
 -- | We don't want to generate any extra pointer validity assertions since we
 -- are supporting exploration rather than verification
@@ -222,7 +190,7 @@ symbolicallyExecute (CW.BinarySymbolicExecutionContext sym symExConf binSymEx) =
   let crucRegsType = DMS.crucArchRegTypes symArchFns
   let regsRepr = LCT.StructRepr crucRegsType
 
-  SomeOnlineSolver bak <- makeOnlineSolver sym (symExConf ^. CW.solver)
+  CS.SomeOnlineSolver bak <- CS.makeOnlineSolver sym (symExConf ^. CW.solver)
 
   -- TODO: Finish the memory setup
 
