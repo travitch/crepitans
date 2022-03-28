@@ -42,6 +42,10 @@ lispToHaskell rep lv =
       | Just f <- DD.fromDynamic dyn -> return (Just (CA.Function f))
     (CA.AddressRepr, LST.Opaque dyn)
       | Just a <- DD.fromDynamic dyn -> return (Just (CA.Address a))
+    (CA.SymbolicExecutionContextRepr, LST.Opaque dyn)
+      | Just c <- DD.fromDynamic dyn -> return (Just (CA.SymbolicExecutionContext c))
+    (CA.SymbolicExecutionResultRepr, LST.Opaque dyn)
+      | Just r <- DD.fromDynamic dyn -> return (Just (CA.SymbolicExecutionResult r))
     (CA.VectorRepr valRepr, LST.Vector vals) -> do
       -- Try to convert all of the contained values into the correct type
       -- (encoded by valRepr); if we don't get enough values of the right type,
@@ -66,6 +70,8 @@ haskellToLisp a =
     CA.DiscoveryInfo di -> LST.Opaque (DD.toDyn di)
     CA.Function f -> LST.Opaque (DD.toDyn f)
     CA.Address addr -> LST.Opaque (DD.toDyn addr)
+    CA.SymbolicExecutionContext c -> LST.Opaque (DD.toDyn c)
+    CA.SymbolicExecutionResult r -> LST.Opaque (DD.toDyn r)
     CA.String_ s -> LST.String s
     CA.Path s -> LST.String s
     CA.Vector_ _repr v -> LST.Vector (DA.listArray (0, DV.length v - 1) [haskellToLisp val | val <- DV.toList v])
@@ -162,6 +168,8 @@ libraryFunctions logAction =
   , F "discovered-functions" DPC.knownRepr CLS.discoveredFunctions
   , F "function-address" DPC.knownRepr CLS.functionAddress
   , F "function-name" DPC.knownRepr CLS.functionName
+  , F "make-symbolic-execution-context" DPC.knownRepr CLS.makeSymbolicExecutionContext
+  , F "symbolically-execute" DPC.knownRepr CLS.symbolicallyExecute
   ]
 
 -- | Introduce all of the value and function bindings into the Scheme

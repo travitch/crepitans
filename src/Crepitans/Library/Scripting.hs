@@ -9,6 +9,8 @@ module Crepitans.Library.Scripting (
   , discoveredFunctions
   , functionAddress
   , functionName
+  , makeSymbolicExecutionContext
+  , symbolicallyExecute
   ) where
 
 import qualified Data.Parameterized.Classes as DPC
@@ -52,3 +54,15 @@ functionName
   :: Ctx.Assignment CA.Argument (EmptyCtx ::> CW.FunctionK)
   -> IO (CA.Argument CW.StringK)
 functionName (Empty :> CA.Function f) = CA.String_ <$> CL.functionName f
+
+makeSymbolicExecutionContext
+  :: Ctx.Assignment CA.Argument (EmptyCtx ::> CW.FunctionK)
+  -> IO (CA.Argument CW.SymbolicExecutionContextK)
+makeSymbolicExecutionContext (Empty :> CA.Function f) =
+  CA.SymbolicExecutionContext <$> CL.makeSymbolicExecutionContext f
+
+symbolicallyExecute
+  :: Ctx.Assignment CA.Argument (EmptyCtx ::> CW.SymbolicExecutionContextK)
+  -> IO (CA.Argument CW.SymbolicExecutionResultK)
+symbolicallyExecute (Empty :> CA.SymbolicExecutionContext ctx) =
+  CA.SymbolicExecutionResult <$> CL.symbolicallyExecute ctx

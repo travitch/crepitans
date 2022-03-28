@@ -38,6 +38,8 @@ module Crepitans.WrapperTypes (
   , AddressK
   , StringK
   , FunctionK
+  , SymbolicExecutionContextK
+  , SymbolicExecutionResultK
   , VectorK
   -- * Run-time representatives
   , ArgumentRepr(..)
@@ -186,6 +188,8 @@ data ArgumentK = BinaryK
                | DiscoveryK
                | FunctionK
                | AddressK
+               | SymbolicExecutionContextK
+               | SymbolicExecutionResultK
                | VectorK ArgumentK
 
 type BinaryK = 'BinaryK
@@ -194,6 +198,8 @@ type StringK = 'StringK
 type DiscoveryK = 'DiscoveryK
 type FunctionK = 'FunctionK
 type AddressK = 'AddressK
+type SymbolicExecutionContextK = 'SymbolicExecutionContextK
+type SymbolicExecutionResultK = 'SymbolicExecutionResultK
 type VectorK a = 'VectorK a
 
 -- | Run-time representatives of all of the values that can be shared between Haskell and Scheme
@@ -207,6 +213,8 @@ data ArgumentRepr tp where
   PathRepr :: ArgumentRepr PathK
   StringRepr :: ArgumentRepr StringK
   AddressRepr :: ArgumentRepr AddressK
+  SymbolicExecutionContextRepr :: ArgumentRepr SymbolicExecutionContextK
+  SymbolicExecutionResultRepr :: ArgumentRepr SymbolicExecutionResultK
   VectorRepr :: ArgumentRepr tp' -> ArgumentRepr (VectorK tp')
 
 deriving instance Show (ArgumentRepr tp)
@@ -217,3 +225,5 @@ instance DPC.KnownRepr ArgumentRepr PathK where knownRepr = PathRepr
 instance DPC.KnownRepr ArgumentRepr StringK where knownRepr = StringRepr
 instance DPC.KnownRepr ArgumentRepr FunctionK where knownRepr = FunctionRepr
 instance DPC.KnownRepr ArgumentRepr AddressK where knownRepr = AddressRepr
+instance DPC.KnownRepr ArgumentRepr SymbolicExecutionContextK where knownRepr = SymbolicExecutionContextRepr
+instance DPC.KnownRepr ArgumentRepr SymbolicExecutionResultK where knownRepr = SymbolicExecutionResultRepr

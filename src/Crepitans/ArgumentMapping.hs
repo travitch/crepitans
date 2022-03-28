@@ -40,6 +40,8 @@ data Argument (tp :: ArgumentK) where
   Function :: Function -> Argument FunctionK
   Path :: FilePath -> Argument PathK
   Address :: Address -> Argument AddressK
+  SymbolicExecutionContext :: SymbolicExecutionContext -> Argument SymbolicExecutionContextK
+  SymbolicExecutionResult :: SymbolicExecutionResult -> Argument SymbolicExecutionResultK
   String_ :: String -> Argument StringK
   Vector_ :: ArgumentRepr tp' -> DV.Vector (Argument tp') -> Argument (VectorK tp')
 
