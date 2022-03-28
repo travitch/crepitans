@@ -12,15 +12,18 @@ module Crepitans.Library.SymbolicExecution (
 import           Control.Lens ( (^.) )
 import           Data.Bits ( (.|.) )
 import qualified Data.Parameterized.Context as Ctx
-import           Data.Parameterized.Some ( Some(..) )
 import qualified Data.Parameterized.Nonce as DPN
+import           Data.Parameterized.Some ( Some(..) )
+import qualified Data.Parameterized.TraversableFC as TFC
 import           Data.String ( fromString )
 import qualified Data.Text as DT
 import qualified Data.Text.Encoding as TE
 import qualified Data.Text.Encoding.Error as TEE
 import qualified System.IO as IO
+import qualified What4.BaseTypes as WT
 import qualified What4.Expr.Builder as WEB
 import qualified What4.FunctionName as WF
+import qualified What4.Interface as WI
 import qualified What4.ProblemFeatures as WP
 import qualified What4.ProgramLoc as WPL
 import qualified What4.Protocol.Online as WPO
@@ -139,6 +142,46 @@ machineCodeExtension archEvalFns memVar globalMap =
 
 data EmptyState t = EmptyState
 
+archValsForArch
+  :: CW.DiscoveryInfoWith arch
+  -> DMS.ArchVals arch
+archValsForArch discInfo =
+  case CW.discoveryInfoArchRepr discInfo of
+    CA.X86_64
+      | Just av <- DMS.archVals CA.X86_64 Nothing -> av
+    CA.PPC32
+      | Just av <- DMS.archVals CA.PPC32 Nothing -> av
+    CA.PPC64
+      | Just av <- DMS.archVals CA.PPC64 Nothing -> av
+    CA.AArch32
+      | Just av <- DMS.archVals CA.AArch32 Nothing -> av
+    -- This case is a panic because we shouldn't have any options by which the user could select an unsupported architecture.
+    --
+    -- Note that the 'DMS.archVals' function really should be total
+    repr -> CP.panic CP.SymbolicExecution "makeSymbolicExecutionContext" ["Missing symbolic implementation for architecture " ++ show repr]
+
+-- | Allocate a completely symbolic value for the given register
+--
+-- Note that this currently allocates only bitvectors (i.e., block id zero
+-- pointers). In the future, it would use under-constrained symbolic execution
+-- to figure out where proper pointers need to be created. Users will need to
+-- provide pointers when it makes sense.
+allocateSymbolicRegVal
+  :: (LCB.IsSymInterface sym)
+  => sym
+  -> LCT.TypeRepr tp
+  -> IO (LCS.RegValue' sym tp)
+allocateSymbolicRegVal sym repr =
+  case repr of
+    LCLM.LLVMPointerRepr w -> do
+      blkId <- WI.natLit sym 0
+      bv <- WI.freshConstant sym (WI.safeSymbol "symbolicRegister") (WT.BaseBVRepr w)
+      return (LCS.RV (LCLM.LLVMPointer blkId bv))
+    LCT.BVRepr w -> do
+      bv <- WI.freshConstant sym (WI.safeSymbol "symbolicRegister") (WT.BaseBVRepr w)
+      return (LCS.RV bv)
+    _ -> CP.panic CP.SymbolicExecution "allocateSymbolicRegVal" ["Missing symbolic allocator for " ++ show repr]
+
 makeSymbolicExecutionContext
   :: CW.Function
   -> IO CW.SymbolicExecutionContext
@@ -147,26 +190,16 @@ makeSymbolicExecutionContext (CW.BinaryFunctionWith discInfo dfi) = do
   let symExConf = CW.SymbolicExecutionConfig { CW._executionFeatures = []
                                              , CW._solver = CS.Yices
                                              }
-  let archVals =
-        case CW.discoveryInfoArchRepr discInfo of
-          CA.X86_64
-            | Just av <- DMS.archVals CA.X86_64 Nothing -> av
-          CA.PPC32
-            | Just av <- DMS.archVals CA.PPC32 Nothing -> av
-          CA.PPC64
-            | Just av <- DMS.archVals CA.PPC64 Nothing -> av
-          CA.AArch32
-            | Just av <- DMS.archVals CA.AArch32 Nothing -> av
-          -- This case is a panic because we shouldn't have any options by which the user could select an unsupported architecture.
-          --
-          -- Note that the 'DMS.archVals' function really should be total
-          repr -> CP.panic CP.SymbolicExecution "makeSymbolicExecutionContext" ["Missing symbolic implementation for architecture " ++ show repr]
+  let archVals = archValsForArch discInfo
+  let symArchFns = DMS.archFunctions archVals
+  let crucRegsType = DMS.crucArchRegTypes symArchFns
+  initialRegVals <- TFC.traverseFC (allocateSymbolicRegVal sym) crucRegsType
 
   let binSymEx = CW.BinarySymEx { CW.binaryDiscoveryInfo = discInfo
                                 , CW.binaryDiscoveryFunInfo = Some dfi
                                 , CW.binaryArchVals = archVals
                                 , CW.binaryArchRepr = CW.discoveryInfoArchRepr discInfo
-                                , CW._initialRegisters = error "FIXME: Populate initial registers"
+                                , CW._initialRegisters = LCS.RegEntry (LCT.StructRepr crucRegsType) initialRegVals
                                 }
   return (CW.BinarySymbolicExecutionContext sym symExConf binSymEx)
 
